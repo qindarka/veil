@@ -24,15 +24,20 @@ export interface Objective {
   location: LocationId | null;
 }
 
-/** Echo-location spines: ritual targets, shrine, portal-from-skyharbor. */
+/** Echo-location spines: ritual targets, shrine, portal-from-skyharbor.
+ * Ritual phrasing varies with party size: co-op rituals invite splitting up,
+ * but a solo walker (or a pair) is told to chain the touches quickly instead
+ * — the allInteract windows are generous enough for one runner. */
 const ECHO_ARCS: Array<{
   location: LocationId;
   echoFlag: string;
   attunedFlag: string;
   ritualIds: string[];
   ritualText: string;
+  ritualTextSolo: string;
   shrineId: string;
   shrineText: string;
+  shrineTextSolo: string;
 }> = [
   {
     location: 'caelis',
@@ -40,8 +45,10 @@ const ECHO_ARCS: Array<{
     attunedFlag: 'caelis-attuned',
     ritualIds: ['cae_resonance_1', 'cae_resonance_2', 'cae_resonance_3'],
     ritualText: 'Attune the three resonance crystals — spread out and sound them together',
+    ritualTextSolo: 'Sound the three resonance crystals, one after another — keep the chord alive',
     shrineId: 'cae_hush_shard',
     shrineText: 'Gather at the Hush Shard — the party must decide its fate',
+    shrineTextSolo: 'Stand before the Hush Shard — its fate is yours to decide',
   },
   {
     location: 'sunken-archive',
@@ -49,8 +56,10 @@ const ECHO_ARCS: Array<{
     attunedFlag: 'archive-attuned',
     ritualIds: ['arc_glyph_1', 'arc_glyph_2', 'arc_glyph_3'],
     ritualText: 'Light the three archive glyphs — spread out and wake them together',
+    ritualTextSolo: 'Light the three archive glyphs in quick succession — the wings are close',
     shrineId: 'arc_memory_pool',
     shrineText: 'Gather at the Memory Pool — the party must decide what it holds',
+    shrineTextSolo: 'Look into the Memory Pool — what it holds is yours to decide',
   },
   {
     location: 'wandering-wood',
@@ -58,8 +67,10 @@ const ECHO_ARCS: Array<{
     attunedFlag: 'wood-attuned',
     ritualIds: ['wood_waystone_1', 'wood_waystone_2', 'wood_waystone_3'],
     ritualText: 'Wake the three waystones — spread out and touch them together',
+    ritualTextSolo: 'Wake the three waystones, one after another — run while the moss still glows',
     shrineId: 'wood_heartwood',
     shrineText: 'Gather at the Heartwood — the party must decide how it grows',
+    shrineTextSolo: 'Stand at the Heartwood — how it grows is yours to decide',
   },
 ];
 
@@ -75,6 +86,8 @@ const SKY_PORTALS: Partial<Record<LocationId, string>> = {
 export function resolveObjective(state: ClientState): Objective {
   const has = (f: string) => state.flags.has(f);
   const here = state.you?.location ?? null;
+  const online = [...state.players.values()].filter((p) => p.online).length;
+  const solo = online <= 1;
 
   // ── Epilogue ───────────────────────────────────────────────────────────────
   if (state.endingId) {
@@ -98,7 +111,9 @@ export function resolveObjective(state: ClientState): Objective {
   if (!has('awakened')) {
     return {
       id: 'awakening',
-      text: 'Wake the three sky-glyphs — together, within a breath',
+      text: solo
+        ? 'Wake the three sky-glyphs, one after another — within a breath of each other'
+        : 'Wake the three sky-glyphs — together, within a breath',
       targetIds: ['sky_glyph_1', 'sky_glyph_2', 'sky_glyph_3'],
       location: 'skyharbor',
     };
@@ -109,7 +124,9 @@ export function resolveObjective(state: ClientState): Objective {
     if (!has('heart-ritual')) {
       return {
         id: 'heart-ritual',
-        text: 'Descend to the Heart — light the five glyphs around the Loom',
+        text: solo
+          ? 'Descend to the Heart — run the ring of five glyphs around the Loom'
+          : 'Descend to the Heart — light the five glyphs around the Loom',
         targetIds: ['heart_glyph_1', 'heart_glyph_2', 'heart_glyph_3', 'heart_glyph_4', 'heart_glyph_5'],
         location: 'heart-of-the-veil',
       };
@@ -129,14 +146,14 @@ export function resolveObjective(state: ClientState): Objective {
     if (!has(localArc.attunedFlag)) {
       return {
         id: `${localArc.location}-ritual`,
-        text: localArc.ritualText,
+        text: solo ? localArc.ritualTextSolo : localArc.ritualText,
         targetIds: localArc.ritualIds,
         location: localArc.location,
       };
     }
     return {
       id: `${localArc.location}-shrine`,
-      text: localArc.shrineText,
+      text: solo ? localArc.shrineTextSolo : localArc.shrineText,
       targetIds: [localArc.shrineId],
       location: localArc.location,
     };

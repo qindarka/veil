@@ -17,6 +17,7 @@ import type {
   ToastKind,
   UIPanel,
 } from '../types';
+import { ActTitleCard } from './ActTitleCard';
 import { CharacterSheet } from './CharacterSheet';
 import { Chat } from './Chat';
 import { ChoicePanel } from './ChoicePanel';
@@ -124,6 +125,7 @@ export class UIManager implements IUIManager {
   private readonly storyOverlay: StoryOverlay;
   private readonly choicePanel: ChoicePanel;
   private readonly focusMode: FocusMode;
+  private readonly actTitleCard: ActTitleCard;
   private readonly journal: Journal;
   private readonly characterSheet: CharacterSheet;
   private readonly settingsPanel: SettingsPanel;
@@ -175,6 +177,7 @@ export class UIManager implements IUIManager {
     this.storyOverlay = new StoryOverlay(this.layerOverlay);
     this.choicePanel = new ChoicePanel(this, this.layerOverlay);
     this.focusMode = new FocusMode(this.layerOverlay);
+    this.actTitleCard = new ActTitleCard(this.layerOverlay);
     this.journal = new Journal(this, this.layerPanels);
     this.characterSheet = new CharacterSheet(this, this.layerPanels);
     this.settingsPanel = new SettingsPanel(this, this.layerPanels);
@@ -199,6 +202,7 @@ export class UIManager implements IUIManager {
     this.storyOverlay.init(ctx);
     this.choicePanel.init(ctx);
     this.focusMode.init(ctx);
+    this.actTitleCard.init(ctx);
     this.journal.init(ctx);
     this.characterSheet.init(ctx);
     this.settingsPanel.init(ctx);

@@ -147,7 +147,7 @@ export class Skyharbor extends LocationBase {
   private walkBridges: WalkBridge[] = [];
 
   protected async buildScene(
-    _ctx: GameContext,
+    ctx: GameContext,
     onProgress: (p: number) => void,
   ): Promise<void> {
     const rand = seededRandom(2607); // fixed seed: identical layout for every player
@@ -427,15 +427,44 @@ export class Skyharbor extends LocationBase {
       z,
     ];
 
-    this.addInteractable(
+    // Serai greets newcomers near the spawn quay, then drifts home to her
+    // lamp once the party has met her (serai-met). Both spots are fixed, so
+    // every client renders her identically; the interactable's collider and
+    // all guidance (beacon, marker, proximity audio) follow her object.
+    const seraiGreet = new THREE.Vector3(...at(0.8, 11.5));
+    const seraiHome = new THREE.Vector3(...at(2.5, 3));
+    const serai = this.addInteractable(
       makeEchoNpc({
         id: 'sky_echo_serai',
         prompt: 'Speak with Serai, the Lantern-Bearer',
-        position: at(2.5, 3),
+        position: ctx.state.flags.has('serai-met')
+          ? (seraiHome.toArray() as [number, number, number])
+          : (seraiGreet.toArray() as [number, number, number]),
         color: 0xffd27a,
         name: 'Serai, the Lantern-Bearer',
       }),
     );
+    this.addDynamic({
+      update: (dt: number) => {
+        const target = ctx.state.flags.has('serai-met') ? seraiHome : seraiGreet;
+        const obj = serai.object;
+        const dx = target.x - obj.position.x;
+        const dz = target.z - obj.position.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 0.05) return;
+        // Unhurried drift (~10s for the walk home), gliding over the terrain.
+        const ease = 1 - Math.exp(-0.35 * dt);
+        obj.position.x += dx * ease;
+        obj.position.z += dz * ease;
+        obj.position.y = this.getGroundHeight(obj.position.x, obj.position.z);
+        // Face the direction of travel, gently.
+        const facing = Math.atan2(dx, dz);
+        const cur = obj.rotation.y;
+        let d = facing - cur;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        obj.rotation.y = cur + d * ease;
+      },
+    });
     this.addInteractable(
       makeShrine({
         id: 'sky_loom',

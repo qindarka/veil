@@ -42,6 +42,9 @@ it looks better on a real GPU.*
   one-time tutorial hints + contextual tips for first-time players.
 - **Crew pings** — press G to drop a teal "over here!" pillar your whole
   party sees in-world and on the minimap.
+- **Cinematic staging** — Serai meets newcomers right at the spawn quay
+  (and walks home once you've met), act transitions get full-screen title
+  cards, and objective phrasing adapts between solo and full-crew play.
 - **Shared journal, story log, party panel, character sheets, minimap,
   text + emote chat**, group choice voting with live tallies.
 - **Persistence** — campaigns live in a Durable Object per room code: story

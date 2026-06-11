@@ -36,7 +36,7 @@ export class HUD {
   private readonly actEl: HTMLDivElement;
   /** The "what do I do now" line (src/story/objectives.ts). */
   private readonly objectiveEl: HTMLDivElement;
-  private lastObjectiveId = '';
+  private lastObjectiveText = '';
   private readonly roomChip: HTMLButtonElement;
   private readonly connPill: HTMLSpanElement;
   private readonly partyList: HTMLDivElement;
@@ -146,8 +146,14 @@ export class HUD {
     });
     ev.on('story:ending', () => this.refreshObjective());
 
-    ev.on('party:player-joined', () => this.refreshParty());
-    ev.on('party:player-left', () => this.refreshParty());
+    ev.on('party:player-joined', () => {
+      this.refreshParty();
+      this.refreshObjective(); // solo vs co-op phrasing
+    });
+    ev.on('party:player-left', () => {
+      this.refreshParty();
+      this.refreshObjective();
+    });
     ev.on('party:player-location', () => this.refreshParty());
     ev.on('focus:changed', () => this.refreshParty());
   }
@@ -190,9 +196,11 @@ export class HUD {
       this.objectiveEl.textContent = 'Explore freely — the story sleeps without the Veil server';
       return;
     }
+    // Keyed on the rendered text, not the id: the phrasing also shifts with
+    // party size (solo vs co-op ritual wording).
     const objective = resolveObjective(ctx.state);
-    if (objective.id === this.lastObjectiveId) return;
-    this.lastObjectiveId = objective.id;
+    if (objective.text === this.lastObjectiveText) return;
+    this.lastObjectiveText = objective.text;
     this.objectiveEl.textContent = objective.text;
     // Re-trigger the settle-in animation so a new goal catches the eye.
     this.objectiveEl.classList.remove('hud-objective-new');

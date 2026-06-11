@@ -225,7 +225,7 @@ export const STORY: StoryData = {
       speaker: 'serai',
       trigger: { type: 'interact', objectId: 'sky_echo_serai' },
       text:
-        'The figure by the great lamp is warm light loosely braided into a woman. “Veilwalkers. Good. The Veil called louder than I dared hope.” She lifts her lantern to your faces one by one, as if memorizing them. “I am Serai. I keep the lights; the lights keep the harbor; the harbor keeps the dream from coming apart entirely. We are losing it, friends — the Hush drinks the Veil one song at a time. Wake the three sky-glyphs by the quay, together, while the light is willing. Light remembers light. Then I will open the old roads.”',
+        'The figure waiting at the quay’s edge is warm light loosely braided into a woman — she has clearly been standing here a while, watching the road you arrived by. “Veilwalkers. Good. The Veil called louder than I dared hope.” She lifts her lantern to your faces one by one, as if memorizing them. “I am Serai. I keep the lights; the lights keep the harbor; the harbor keeps the dream from coming apart entirely. We are losing it, friends — the Hush drinks the Veil one song at a time. Wake the three sky-glyphs by the quay, together, while the light is willing. Light remembers light. Then I will open the old roads.”',
       focusText:
         'Held in your stillness, her braided light loosens at the edges. “I was the first the Dreamer made,” she says, quieter. “I have watched the Hush take the others’ places one by one and could only keep lamps against it. I lit every lantern on this harbor so that whoever finally came would not arrive in the dark. You came. That is already more than I had yesterday.”',
       effects: [
@@ -250,7 +250,7 @@ export const STORY: StoryData = {
       trigger: { type: 'interact', objectId: 'sky_echo_serai' },
       when: { all: ['serai-met'] },
       text:
-        '“Still here. Still lit.” Serai trims a lantern that does not need trimming — keepers keep; it is what the word is for. “Whatever you find out on the roads, bring it back and tell me. Even the heavy parts. Especially the heavy parts. A harbor is just a place where stories agree to land.” She glances out at the cloud-sea, then back, and the light of her braids steadies. “And if the Hush gets loud out there, remember — it cannot take what you give to each other. Speak. Sing badly. Hold the line.”',
+        '“Still here. Still lit.” Back at her post by the great lamp, Serai trims a lantern that does not need trimming — keepers keep; it is what the word is for. “Whatever you find out on the roads, bring it back and tell me. Even the heavy parts. Especially the heavy parts. A harbor is just a place where stories agree to land.” She glances out at the cloud-sea, then back, and the light of her braids steadies. “And if the Hush gets loud out there, remember — it cannot take what you give to each other. Speak. Sing badly. Hold the line.”',
       focusText:
         'In the anchored hush she adds, almost too soft to keep: “I knew the seventh keeper — the one scraped from the mural. The Dreamer did not remove them in anger. They removed themselves, to carry the grief out of the picture. If you meet something out there that sounds like silence apologizing… be kind to it. It used to sing the rest of us awake.”',
       effects: [{ type: 'relationship', npcId: 'serai', delta: 1 }],
