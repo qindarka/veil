@@ -1,23 +1,29 @@
 /**
  * src/audio/AudioManager.ts
  * Implements IAudioManager: the adaptive WebAudio soundtrack (mood crossfades
- * via music.ts), synthesized one-shot SFX (synth.ts), volume channels, and
- * the focus-mode "underwater" lowpass sweep.
+ * via music.ts), synthesized one-shot SFX (synth.ts), volume channels, the
+ * focus-mode "underwater" lowpass sweep, and the objective-guidance layer —
+ * a proximity shimmer that swells near the current objective's targets plus
+ * a short sting when the resolved objective advances.
  *
  * Signal graph:
  *   musicGain ─┐
  *              ├─► lowpass (focus filter) ─► masterGain ─► compressor ─► out
- *   sfxGain  ──┘
+ *   sfxGain  ──┘   (the shimmer loop and the sting feed sfxGain, so they
+ *                   inherit the focus filter and the sfx/master channels)
  *
  * The AudioContext is created suspended (browser autoplay policy) and resumed
  * by unlock(), which Game calls from the main-menu submit gesture.
  */
 
+import * as THREE from 'three';
 import type { MusicMood, SfxId } from '../../shared/constants';
-import type { GameContext, IAudioManager } from '../types';
+import { localTargets, resolveObjective } from '../story/objectives';
+import type { GameContext, IAudioManager, Interactable } from '../types';
 import type { MoodPlayer } from './music';
 import { createMoodPlayer } from './music';
-import { playSfx } from './synth';
+import type { ShimmerHandle } from './synth';
+import { objectiveSting, playSfx, startShimmerLoop } from './synth';
 
 type VolumeChannel = 'master' | 'music' | 'sfx';
 
@@ -27,6 +33,17 @@ const FILTER_OPEN_HZ = 19500;
 const FILTER_FOCUS_HZ = 900;
 /** Per-call SFX detune jitter (± cents) so repeats feel organic. */
 const SFX_JITTER_CENTS = 14;
+
+/** Proximity shimmer is silent at/beyond this distance to the nearest target. */
+const SHIMMER_FAR_M = 28;
+/** ...and at full presence at/inside this distance. */
+const SHIMMER_NEAR_M = 5;
+/** Shimmer ceiling — a modest slice of the sfx channel; the music stays on top. */
+const SHIMMER_LEVEL = 0.25;
+/** setTargetAtTime time constant for the shimmer level (no zipper, no clicks). */
+const SHIMMER_SMOOTH_S = 0.25;
+/** Objective/target re-resolve cadence; the distance itself runs every frame. */
+const OBJECTIVE_REFRESH_S = 1;
 
 const SFX_FILE_BASE = (): string => `${import.meta.env.BASE_URL}audio/sfx/`;
 
@@ -48,6 +65,21 @@ export class AudioManager implements IAudioManager {
   private active: MoodPlayer | null = null;
   private focusHeld = false;
   private unsubs: Array<() => void> = [];
+
+  // Objective-guidance layer (proximity shimmer + advance sting).
+  /** Lazily-created proximity loop (after unlock, on first audible use). */
+  private shimmer: ShimmerHandle | null = null;
+  /** Last driven shimmer level, to skip redundant automation events. */
+  private shimmerLevel = 0;
+  /** AudioContext time of the next scheduled sparkle bell. */
+  private nextSparkleAt = 0;
+  /** Resolved objective id from the previous re-resolve (null = none yet). */
+  private lastObjectiveId: string | null = null;
+  /** Current-objective targets in the current location (refreshed at ~1Hz). */
+  private targets: Interactable[] = [];
+  private nextObjectiveRefresh = 0;
+  private objectiveDirty = false;
+  private readonly tmpTargetPos = new THREE.Vector3();
 
   /** Decoded replacement SFX files (null = probed, none found). */
   private readonly sfxFiles = new Map<SfxId, AudioBuffer | null>();
@@ -107,20 +139,36 @@ export class AudioManager implements IAudioManager {
         this.sweepFocusFilter(on);
         this.sfx(on ? 'focus-on' : 'focus-off');
       }),
+      // The objective can move when flags land, locations unlock or we arrive
+      // somewhere new — fold an immediate re-resolve into the next update tick.
+      ctx.events.on('story:flags', () => {
+        this.objectiveDirty = true;
+      }),
+      ctx.events.on('locations:unlocked', () => {
+        this.objectiveDirty = true;
+      }),
+      ctx.events.on('world:travel-end', () => {
+        this.objectiveDirty = true;
+      }),
     );
   }
 
   /**
-   * Intentionally minimal: all musical timing is scheduled on the
-   * AudioContext clock by music.ts's lookahead transport, not the game loop.
+   * Musical timing is scheduled on the AudioContext clock by music.ts's
+   * lookahead transport, not the game loop — update() only drives the
+   * objective-guidance layer (proximity shimmer level + advance sting).
    */
-  update(_dt: number, _elapsed: number): void {}
+  update(_dt: number, elapsed: number): void {
+    this.updateGuidance(elapsed);
+  }
 
   dispose(): void {
     for (const off of this.unsubs) off();
     this.unsubs = [];
     this.active?.stop(0.1);
     this.active = null;
+    this.shimmer?.stop(0.2);
+    this.shimmer = null;
     void this.ac.close().catch(() => {});
   }
 
@@ -216,6 +264,117 @@ export class AudioManager implements IAudioManager {
     freq.exponentialRampToValueAtTime(on ? FILTER_FOCUS_HZ : FILTER_OPEN_HZ, t + (on ? 1.0 : 0.7));
     // A touch of resonance while submerged makes it watery, not just muffled.
     this.lowpass.Q.setTargetAtTime(on ? 1.3 : 0.7, t, 0.3);
+  }
+
+  // ── Objective guidance: proximity shimmer + advance sting ──────────────────
+
+  /**
+   * Per-frame driver. Re-resolves the objective + local targets at ~1Hz (or
+   * immediately when an event marked them dirty), measures the distance to
+   * the nearest target every tick, and eases the shimmer level toward it.
+   */
+  private updateGuidance(elapsed: number): void {
+    const ctx = this.ctx;
+    // Pre-init/pre-welcome there is nothing to resolve yet; offline solo has
+    // no story director, so the guidance layer stays silent (like Beacons).
+    if (!ctx || ctx.state.you === null || ctx.net.offlineMode) {
+      this.driveShimmer(0);
+      return;
+    }
+    // The arrival sweep owns the camera: hold the shimmer and defer any
+    // pending re-resolve so an advance sting lands as control returns.
+    if (ctx.player.cinematicActive) {
+      this.driveShimmer(0);
+      return;
+    }
+
+    if (this.objectiveDirty || elapsed >= this.nextObjectiveRefresh) {
+      this.objectiveDirty = false;
+      this.nextObjectiveRefresh = elapsed + OBJECTIVE_REFRESH_S;
+      this.refreshObjective();
+    }
+
+    // Mute outright when the context is silent anyway, while a focus anchor
+    // holds the lowpass moment, after the ending, or with nothing to find.
+    if (
+      this.ac.state !== 'running' ||
+      this.focusHeld ||
+      ctx.state.endingId !== null ||
+      this.targets.length === 0
+    ) {
+      this.driveShimmer(0);
+      return;
+    }
+
+    // Distance to the nearest target, measured every tick.
+    let nearest = Infinity;
+    for (const target of this.targets) {
+      target.object.getWorldPosition(this.tmpTargetPos);
+      nearest = Math.min(nearest, this.tmpTargetPos.distanceTo(ctx.player.position));
+    }
+    // Smoothstep far → near so the swell eases in and out at both edges.
+    const x = Math.min(1, Math.max(0, (SHIMMER_FAR_M - nearest) / (SHIMMER_FAR_M - SHIMMER_NEAR_M)));
+    this.driveShimmer(SHIMMER_LEVEL * x * x * (3 - 2 * x));
+  }
+
+  /** Re-derive the objective and its local targets — the same way the HUD does. */
+  private refreshObjective(): void {
+    const ctx = this.ctx;
+    const objective = resolveObjective(ctx.state);
+
+    // Advance sting: the resolved id moved after game start. The very first
+    // resolution (join/rejoin) and the ending's own moment stay silent.
+    if (
+      this.lastObjectiveId !== null &&
+      objective.id !== this.lastObjectiveId &&
+      ctx.state.endingId === null &&
+      this.ac.state === 'running'
+    ) {
+      const jitter = (Math.random() * 2 - 1) * SFX_JITTER_CENTS;
+      objectiveSting(this.ac, this.sfxGain, this.ac.currentTime + 0.01, jitter);
+    }
+    this.lastObjectiveId = objective.id;
+
+    const location = ctx.world.current;
+    if (!location) {
+      this.targets = [];
+      return;
+    }
+    // When the targets live elsewhere, shimmer toward the local waygate.
+    const portals = location.interactables
+      .filter((it) => it.kind === 'portal' && it.portalTo)
+      .map((it) => ({ id: it.id, to: it.portalTo! }));
+    this.targets = localTargets(objective, location.id, portals)
+      .map((id) => ctx.world.getInteractable(id))
+      .filter((it): it is Interactable => it !== null);
+  }
+
+  /**
+   * Ease the proximity loop toward `level` (0..SHIMMER_LEVEL), lazily creating
+   * it on first audible use, and keep its sparse sparkle bells scheduled.
+   */
+  private driveShimmer(level: number): void {
+    if (!this.shimmer) {
+      if (level <= 0 || !this.unlocked || this.ac.state !== 'running') return;
+      this.shimmer = startShimmerLoop(this.ac, this.sfxGain);
+      this.nextSparkleAt = this.ac.currentTime + 1.2;
+    }
+    const t = this.ac.currentTime;
+    if (Math.abs(level - this.shimmerLevel) > 0.001) {
+      this.shimmerLevel = level;
+      this.shimmer.level.setTargetAtTime(level, t, SHIMMER_SMOOTH_S);
+    }
+    if (level > 0.02) {
+      // Keep one sparkle queued just ahead of the clock while audible.
+      if (this.nextSparkleAt < t + 0.15) {
+        const when = Math.max(this.nextSparkleAt, t + 0.02);
+        this.shimmer.sparkle(when, (Math.random() * 2 - 1) * SFX_JITTER_CENTS);
+        this.nextSparkleAt = when + 0.7 + Math.random() * 1.6;
+      }
+    } else {
+      // While silent, keep the next sparkle off the immediate horizon.
+      this.nextSparkleAt = Math.max(this.nextSparkleAt, t + 0.8);
+    }
   }
 
   private probeSfxFile(id: SfxId): void {

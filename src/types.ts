@@ -93,6 +93,8 @@ export interface EventMap {
   'party:player-left': { playerId: PlayerId; name: string };
   'party:player-location': { playerId: PlayerId; location: LocationId };
   'party:stats': { playerId: PlayerId; stats: PlayerStats };
+  /** A crew ping (G): a temporary "come here" marker everyone sees. */
+  'party:marker': { from: PlayerId; name: string; p: Vec3; location: LocationId };
 
   // Chat
   'chat:message': { from: PlayerId; name: string; text: string; self: boolean };
@@ -206,6 +208,12 @@ export interface ILocation {
   update(dt: number, elapsed: number): void;
   /** Analytic ground height used to keep avatars on the terrain. */
   getGroundHeight(x: number, z: number): number;
+  /**
+   * Optional walkable-surface containment: mutate `pos` back onto valid
+   * ground. Locations with voids (floating islands, bridges) implement this
+   * so players cannot stroll onto thin air; continuous terrains skip it.
+   */
+  constrainPosition?(pos: THREE.Vector3): void;
   onEnter?(ctx: GameContext): void;
   onExit?(ctx: GameContext): void;
   dispose(): void;
@@ -239,6 +247,14 @@ export interface IPlayerController extends Subsystem {
   teleport(pos: Vec3, yaw?: number): void;
   /** Freeze movement input (used during endings / modal moments). */
   setFrozen(frozen: boolean): void;
+  /** True while the arrival camera sweep owns the camera (UI may hide chrome). */
+  readonly cinematicActive: boolean;
+  /**
+   * Play the first-arrival camera sweep: descend from above the spawn down
+   * into the third-person rig, ending faced toward `lookTarget` when given.
+   * Skippable by any input. No-op when one is already playing.
+   */
+  playArrivalCinematic(lookTarget: THREE.Vector3 | null): void;
 }
 
 export interface IRemotePlayers extends Subsystem {

@@ -29,6 +29,7 @@ import { LoadingVeil } from './LoadingVeil';
 import { MainMenu } from './MainMenu';
 import { OnboardingHints } from './OnboardingHints';
 import { Minimap } from './Minimap';
+import { ObjectiveMarker } from './ObjectiveMarker';
 import { SettingsPanel } from './SettingsPanel';
 import { StoryOverlay } from './StoryOverlay';
 import { Toasts } from './Toasts';
@@ -118,6 +119,7 @@ export class UIManager implements IUIManager {
   private readonly toasts: Toasts;
   private readonly hud: HUD;
   private readonly minimap: Minimap;
+  private readonly objectiveMarker: ObjectiveMarker;
   private readonly chat: Chat;
   private readonly storyOverlay: StoryOverlay;
   private readonly choicePanel: ChoicePanel;
@@ -168,6 +170,7 @@ export class UIManager implements IUIManager {
     this.toasts = new Toasts(this.layerToasts);
     this.hud = new HUD(this, this.layerHud);
     this.minimap = new Minimap(this.layerHud);
+    this.objectiveMarker = new ObjectiveMarker(this.layerHud);
     this.chat = new Chat(this, this.layerHud);
     this.storyOverlay = new StoryOverlay(this.layerOverlay);
     this.choicePanel = new ChoicePanel(this, this.layerOverlay);
@@ -191,6 +194,7 @@ export class UIManager implements IUIManager {
 
     this.hud.init(ctx);
     this.minimap.init(ctx);
+    this.objectiveMarker.init(ctx);
     this.chat.init(ctx);
     this.storyOverlay.init(ctx);
     this.choicePanel.init(ctx);
@@ -255,6 +259,8 @@ export class UIManager implements IUIManager {
     this.storyOverlay.update(dt);
     this.choicePanel.update(dt);
     this.onboarding.update(dt);
+    // Full rate: the marker is projected through the camera every frame.
+    this.objectiveMarker.update(dt);
 
     // Minimap redraw at ~10Hz; full-rate redraws are wasted work for a map.
     this.minimapAccum += dt;

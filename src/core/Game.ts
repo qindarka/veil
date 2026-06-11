@@ -6,9 +6,11 @@
  * loop with a fixed update order.
  */
 
+import * as THREE from 'three';
 import { STARTING_LOCATION } from '../../shared/constants';
 import { EventBus } from './events';
 import { ClientState, getOrCreatePlayerToken } from '../state';
+import { localTargets, resolveObjective } from '../story/objectives';
 import type { EventMap, GameContext, IUIManager, Subsystem } from '../types';
 
 // Concrete subsystem classes (each file exports a class named after the file).
@@ -135,6 +137,10 @@ export class Game {
     ctx.audio.setMood(ctx.state.mood);
     ctx.events.emit('game:ready', {});
 
+    // First-arrival cinematic: a slow sweep down from the sky, ending faced
+    // toward the current objective (skippable with any input).
+    ctx.player.playArrivalCinematic(this.firstObjectivePosition());
+
     // Dev-only debug handle for the browser console / automated smoke tests.
     if (import.meta.env.DEV) {
       (window as unknown as { __veil?: GameContext }).__veil = ctx;
@@ -143,6 +149,23 @@ export class Game {
     // 8. The frame loop.
     this.running = true;
     requestAnimationFrame(this.frame);
+  }
+
+  /** World position of the nearest current-objective target, if resolvable. */
+  private firstObjectivePosition(): THREE.Vector3 | null {
+    const ctx = this.ctx;
+    if (ctx.net.offlineMode) return null;
+    const location = ctx.world.current;
+    if (!location) return null;
+    const portals = location.interactables
+      .filter((it) => it.kind === 'portal' && it.portalTo)
+      .map((it) => ({ id: it.id, to: it.portalTo! }));
+    const ids = localTargets(resolveObjective(ctx.state), ctx.world.currentId, portals);
+    for (const id of ids) {
+      const target = ctx.world.getInteractable(id);
+      if (target) return target.object.getWorldPosition(new THREE.Vector3());
+    }
+    return null;
   }
 
   private frame = (now: number): void => {

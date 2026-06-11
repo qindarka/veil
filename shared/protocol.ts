@@ -165,6 +165,8 @@ export type ClientMsg =
   | { t: 'enterLocation'; location: LocationId }
   | { t: 'vote'; choiceId: string; optionId: string }
   | { t: 'focus'; on: boolean }
+  /** Crew ping: drop a short-lived "come here" marker at p for the party. */
+  | { t: 'marker'; p: Vec3 }
   | { t: 'ping'; ts: number };
 
 // ── Server → Client ──────────────────────────────────────────────────────────
@@ -190,6 +192,7 @@ export type ServerMsg =
   | { t: 'playerLoc'; playerId: PlayerId; location: LocationId }
   | { t: 'stats'; playerId: PlayerId; stats: PlayerStats }
   | { t: 'focus'; holderId: PlayerId | null; holderName: string | null }
+  | { t: 'marker'; from: PlayerId; name: string; p: Vec3; loc: LocationId }
   | { t: 'mood'; mood: MusicMood }
   | { t: 'event'; event: RandomEventPayload }
   | { t: 'denied'; objectId?: string; reason: string }
@@ -209,6 +212,7 @@ const CLIENT_MSG_TAGS = [
   'enterLocation',
   'vote',
   'focus',
+  'marker',
   'ping',
 ] as const;
 

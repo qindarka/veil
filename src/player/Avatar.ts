@@ -6,7 +6,10 @@
  * head orb under the hood, trailing wisp particles (a tiny Points system) and
  * a soft archetype-colored PointLight. Also owns the floating gait animation
  * (bobs while idle, leans + bobs faster while moving), the name-tag sprite,
- * and transient emote-burst / chat-bubble sprites.
+ * transient emote-burst / chat-bubble sprites, parametric emote flourishes
+ * (a ~1.4 s body animation per emote, eased back to exact neutral) and idle
+ * life: subtle breathing plus an occasional head-orb flicker, randomized per
+ * avatar so a party never pulses in sync.
  */
 
 import * as THREE from 'three';
@@ -20,6 +23,13 @@ const ROBE_TOP_Y = 1.32; // shoulder line
 const HEAD_Y = 1.38; // glowing head orb center
 const NAMETAG_Y = 2.05;
 const WISP_COUNT = 26;
+
+const FLOURISH_S = 1.4; // emote body-flourish duration
+const BREATH_PERIOD_S = 4; // idle breathing cycle
+const BREATH_AMP = 0.015; // ±1.5% scale
+const FLICKER_MIN_S = 6; // min seconds between head-orb flickers
+const FLICKER_MAX_S = 12; // max seconds between head-orb flickers
+const FLICKER_S = 1.1; // duration of one flicker
 
 /** Floating-gait parameters per animation state (eased between on change). */
 const GAIT: Record<AnimState, { bobAmp: number; bobHz: number; lean: number }> = {
@@ -52,6 +62,25 @@ function getSoftTexture(): THREE.Texture {
 
 function colorToCss(color: number): string {
   return `#${color.toString(16).padStart(6, '0')}`;
+}
+
+// ── Easing ───────────────────────────────────────────────────────────────────
+
+/** Sine-squared bell: eases 0 → 1 → 0 over u ∈ [0,1], exactly 0 at both ends. */
+function bell(u: number): number {
+  const s = Math.sin(Math.PI * u);
+  return s * s;
+}
+
+/** Hermite smoothstep of u clamped to [0,1]. */
+function smooth01(u: number): number {
+  const t = Math.min(1, Math.max(0, u));
+  return t * t * (3 - 2 * t);
+}
+
+/** Ease in over the first quarter, hold at 1, ease out over the last quarter. */
+function plateau(u: number): number {
+  return smooth01(u / 0.25) * (1 - smooth01((u - 0.75) / 0.25));
 }
 
 // ── Robe shader ──────────────────────────────────────────────────────────────
@@ -195,6 +224,13 @@ export class Avatar {
 
   private readonly color: THREE.Color;
   private readonly body = new THREE.Group();
+  /**
+   * Inner container holding the visible body meshes (robe, hood, orb, halo).
+   * Single-writer split: the controller/interpolation drives `group`, the
+   * gait drives `body`, and emote flourishes + breathing drive ONLY this —
+   * never the group root, name tag, chat bubbles or emoji sprites.
+   */
+  private readonly innerBody = new THREE.Group();
   private readonly robeMaterials: THREE.ShaderMaterial[] = [];
   private readonly hoodMaterial: THREE.MeshStandardMaterial;
   private readonly orb: THREE.Mesh;
@@ -212,6 +248,14 @@ export class Avatar {
   private lean = 0;
   private bobPhase = Math.random() * Math.PI * 2; // desync avatars from each other
 
+  /** Active emote flourish (null when the body is at neutral). */
+  private flourish: { emote: EmoteId; age: number } | null = null;
+  // Idle life, randomized per avatar so a party never breathes/flickers in sync.
+  private readonly breathPhase = Math.random() * Math.PI * 2;
+  private readonly breathHz = (0.9 + Math.random() * 0.2) / BREATH_PERIOD_S;
+  private flickerIn = FLICKER_MIN_S + Math.random() * (FLICKER_MAX_S - FLICKER_MIN_S);
+  private flickerAge = FLICKER_S; // >= FLICKER_S means not flickering
+
   private transients: TransientSprite[] = [];
   private bubble: TransientSprite | null = null;
   private disposed = false;
@@ -219,6 +263,7 @@ export class Avatar {
   constructor(opts: { color: number; name: string; isSelf?: boolean }) {
     this.color = new THREE.Color(opts.color);
     this.group.add(this.body);
+    this.body.add(this.innerBody);
 
     // — Robe: two lathe shells, inner soft-solid + outer additive ghost layer.
     const profile = [
@@ -242,7 +287,7 @@ export class Avatar {
     inner.renderOrder = 1;
     outer.renderOrder = 2;
     this.robeMaterials.push(inner.material as THREE.ShaderMaterial, outer.material as THREE.ShaderMaterial);
-    this.body.add(inner, outer);
+    this.innerBody.add(inner, outer);
 
     // — Hood: a partial lathe (open 63° at the front, +Z) so the orb shows.
     const hoodProfile = [
@@ -266,7 +311,7 @@ export class Avatar {
     const hood = new THREE.Mesh(hoodGeo, this.hoodMaterial);
     hood.position.y = ROBE_TOP_Y - 0.02;
     hood.rotation.x = 0.1; // slight forward tilt over the face
-    this.body.add(hood);
+    this.innerBody.add(hood);
 
     // — Glowing head orb (+ additive halo). toneMapped:false so it blooms hard.
     const orbColor = this.color.clone().lerp(new THREE.Color(0xffffff), 0.55);
@@ -288,7 +333,7 @@ export class Avatar {
     this.halo.scale.setScalar(0.5);
     this.halo.position.copy(this.orb.position);
     this.halo.renderOrder = 3;
-    this.body.add(this.orb, this.halo);
+    this.innerBody.add(this.orb, this.halo);
 
     // — Soft personal light in the archetype color.
     this.light = new THREE.PointLight(opts.color, 1.2, 6);
@@ -344,8 +389,13 @@ export class Avatar {
     this.nameTag.visible = v;
   }
 
-  /** Emoji burst sprite that pops in, floats up and fades over ~2 s. */
+  /**
+   * Emoji burst sprite that pops in, floats up and fades over ~2 s, plus a
+   * ~1.4 s parametric body flourish (see updateFlourish). A new emote
+   * restarts the flourish from neutral.
+   */
   showEmote(emote: EmoteId): void {
+    this.flourish = { emote, age: 0 };
     const def = EMOTES.find((e) => e.id === emote);
     const icon = def ? def.icon : '✨';
     const canvas = document.createElement('canvas');
@@ -427,11 +477,33 @@ export class Avatar {
     this.body.rotation.x = this.lean + Math.sin(this.bobPhase * 0.5) * 0.015;
     this.body.rotation.z = Math.sin(this.bobPhase * 0.43) * 0.02;
 
-    // — Head orb pulse + light flicker (subtle life).
-    const pulse = 1 + Math.sin(elapsed * 2.3 + this.bobPhase * 0.2) * 0.08;
+    // — Emote flourish: pose the inner body container for this frame.
+    const flourish = this.updateFlourish(dt);
+
+    // — Idle life: breathing on the inner container (composed with any
+    //   flourish scale pulse) + an occasional gentle head-orb flicker.
+    const breath = 1 + Math.sin(this.breathPhase + elapsed * this.breathHz * Math.PI * 2) * BREATH_AMP;
+    this.innerBody.scale.setScalar(breath * flourish.scale);
+    this.flickerIn -= dt;
+    if (this.flickerIn <= 0) {
+      this.flickerIn = FLICKER_MIN_S + Math.random() * (FLICKER_MAX_S - FLICKER_MIN_S);
+      this.flickerAge = 0;
+    }
+    let flickerGlow = 0;
+    if (this.flickerAge < FLICKER_S) {
+      this.flickerAge += dt;
+      const fu = Math.min(1, this.flickerAge / FLICKER_S);
+      flickerGlow = bell(fu) * 0.45 * (0.7 + 0.3 * Math.sin(fu * Math.PI * 6)); // soft, slightly uneven
+    }
+
+    // — Head orb pulse + light flicker (subtle life), boosted by any glow.
+    const glow = Math.min(1, flourish.glow + flickerGlow);
+    const pulse = (1 + Math.sin(elapsed * 2.3 + this.bobPhase * 0.2) * 0.08) * (1 + glow * 0.35);
     this.orb.scale.setScalar(pulse);
-    (this.halo.material as THREE.SpriteMaterial).opacity = 0.55 + Math.sin(elapsed * 2.3) * 0.15;
-    this.light.intensity = 1.2 + Math.sin(elapsed * 3.1) * 0.08;
+    this.halo.scale.setScalar(0.5 * (1 + glow * 0.45));
+    (this.halo.material as THREE.SpriteMaterial).opacity =
+      Math.min(1, 0.55 + Math.sin(elapsed * 2.3) * 0.15 + glow * 0.3);
+    this.light.intensity = 1.2 + Math.sin(elapsed * 3.1) * 0.08 + glow * 0.9;
 
     // — Wisps: each particle rises in a loose spiral around the robe and loops.
     const pos = this.wispGeo.getAttribute('position') as THREE.BufferAttribute;
@@ -464,6 +536,64 @@ export class Avatar {
         t.sprite.scale.set(t.baseScaleX * s, t.baseScaleY * s, 1);
       }
     }
+  }
+
+  /**
+   * Advance the active emote flourish and pose the inner body container for
+   * this frame. Every shape is parametric in u = age / FLOURISH_S with
+   * envelopes that are exactly 0 at u = 0 and u = 1 (spins end at exactly
+   * 2π), so the body returns precisely to neutral; on completion the
+   * transform is hard-reset to zero. Returns this frame's extra inner-body
+   * scale factor and head-orb glow boost (0..1).
+   */
+  private updateFlourish(dt: number): { scale: number; glow: number } {
+    const pos = this.innerBody.position;
+    const rot = this.innerBody.rotation;
+    if (!this.flourish) return { scale: 1, glow: 0 };
+    this.flourish.age += dt;
+    const u = this.flourish.age / FLOURISH_S;
+    if (u >= 1) {
+      this.flourish = null;
+      pos.set(0, 0, 0);
+      rot.set(0, 0, 0);
+      return { scale: 1, glow: 0 };
+    }
+    pos.set(0, 0, 0);
+    rot.set(0, 0, 0);
+    let scale = 1;
+    let glow = 0;
+    const env = bell(u);
+    switch (this.flourish.emote) {
+      case 'wave': // friendly side-lean + bob
+        rot.z = env * 0.24;
+        pos.y = env * 0.06 * Math.sin(u * Math.PI * 4);
+        break;
+      case 'dance': // one full eased spin with two small hops
+        rot.y = Math.PI * 2 * smooth01(u);
+        pos.y = 0.07 * Math.abs(Math.sin(u * Math.PI * 2));
+        break;
+      case 'point': // lean forward and hold
+        rot.x = 0.32 * plateau(u);
+        break;
+      case 'laugh': // quick little shakes
+        rot.z = env * 0.085 * Math.sin(u * Math.PI * 14);
+        pos.y = env * 0.025 * Math.abs(Math.sin(u * Math.PI * 7));
+        break;
+      case 'heart':
+      case 'sparkle': // scale pulse + brighter head-orb glow
+        scale = 1 + env * 0.09;
+        glow = env;
+        break;
+      case 'ponder': // slow pensive sway, tipped back as if peering up
+        rot.z = env * 0.13 * Math.sin(u * Math.PI * 2);
+        rot.x = env * -0.07;
+        break;
+      case 'cheer': // two hops, with a single spin on the second
+        pos.y = 0.13 * Math.abs(Math.sin(u * Math.PI * 2));
+        rot.y = Math.PI * 2 * smooth01((u - 0.45) / 0.55);
+        break;
+    }
+    return { scale, glow };
   }
 
   private removeTransient(t: TransientSprite): void {

@@ -126,6 +126,8 @@ export class VeilRoom {
   // rebuilt with safe defaults after a genuine hibernation/wake.
   private readonly sessions = new Map<WebSocket, Session>();
   private readonly live = new Map<PlayerId, LiveState>();
+  /** Crew-ping rate limiting (in-memory; resets on wake, which is fine). */
+  private readonly lastMarkerAt = new Map<PlayerId, number>();
   private focusHolderId: PlayerId | null = null;
   private tickHandle: number | null = null;
   private persistHandle: number | null = null;
@@ -390,6 +392,24 @@ export class VeilRoom {
           this.schedulePersist();
         }
         break;
+      }
+
+      case 'marker': {
+        // Crew ping: ephemeral, broadcast to everyone (sender included, so
+        // their own ping renders identically). Light rate limit per player.
+        if (!isVec3(msg.p)) return;
+        const now = Date.now();
+        const last = this.lastMarkerAt.get(rec.id) ?? 0;
+        if (now - last < 1500) return;
+        this.lastMarkerAt.set(rec.id, now);
+        this.broadcast({
+          t: 'marker',
+          from: rec.id,
+          name: rec.name,
+          p: [msg.p[0], msg.p[1], msg.p[2]],
+          loc: this.live.get(rec.id)?.loc ?? rec.location,
+        });
+        return;
       }
 
       case 'focus': {

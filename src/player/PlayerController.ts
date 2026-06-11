@@ -71,6 +71,9 @@ export class PlayerController implements IPlayerController {
   private camTargetDist = 7;
   private readonly followPos = new THREE.Vector3(0, CAM_HEAD_HEIGHT, 0);
 
+  /** Arrival camera sweep; non-null while playing (see playArrivalCinematic). */
+  private cinematic: { t: number; duration: number; endYaw: number } | null = null;
+
   // Input state.
   private readonly keys = new Set<string>();
   private pointerLocked = false;
@@ -94,6 +97,21 @@ export class PlayerController implements IPlayerController {
 
   get avatarObject(): THREE.Object3D {
     return this.avatar.group;
+  }
+
+  get cinematicActive(): boolean {
+    return this.cinematic !== null;
+  }
+
+  playArrivalCinematic(lookTarget: THREE.Vector3 | null): void {
+    if (this.cinematic) return;
+    // End the sweep facing the first objective: the camera parks on the far
+    // side of the avatar from the target, looking across it.
+    const endYaw = lookTarget
+      ? Math.atan2(this.position.x - lookTarget.x, this.position.z - lookTarget.z)
+      : this.camYaw;
+    this.cinematic = { t: 0, duration: 5, endYaw };
+    document.exitPointerLock?.();
   }
 
   init(ctx: GameContext): void {
@@ -152,6 +170,11 @@ export class PlayerController implements IPlayerController {
   // ── Input handlers ─────────────────────────────────────────────────────────
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    if (this.cinematic) {
+      // Any key skips the arrival sweep (it settles on the next frame).
+      this.cinematic.t = this.cinematic.duration;
+      return;
+    }
     if (this.ctx.ui.inputCaptured) return; // chat/menu owns the keyboard
 
     if (MOVE_CODES.has(e.code) || SHIFT_CODES.has(e.code)) {
@@ -170,6 +193,14 @@ export class PlayerController implements IPlayerController {
       case 'KeyF':
         this.ctx.story.toggleFocus();
         return;
+      case 'KeyG':
+        // Crew ping at our feet; the server echoes it to the whole party
+        // (ourselves included), so the visual comes from one code path.
+        this.ctx.net.send({
+          t: 'marker',
+          p: [this.position.x, this.position.y, this.position.z],
+        });
+        return;
     }
     // J/C/O/H panel hotkeys live in UIManager and Digit1-8 emotes live in
     // HUD — the controller must not also bind them or they double-fire.
@@ -181,6 +212,10 @@ export class PlayerController implements IPlayerController {
   };
 
   private onMouseDown = (e: MouseEvent): void => {
+    if (this.cinematic) {
+      this.cinematic.t = this.cinematic.duration; // skip the arrival sweep
+      return;
+    }
     if (e.button !== 0 || this.ctx.ui.inputCaptured) return;
     this.dragging = true;
     this.dragMoved = 0;
@@ -248,7 +283,7 @@ export class PlayerController implements IPlayerController {
     // — Movement input (camera-relative on the XZ plane).
     let ix = 0;
     let iz = 0;
-    if (!this.frozen && !this.ctx.ui.inputCaptured) {
+    if (!this.frozen && !this.ctx.ui.inputCaptured && !this.cinematic) {
       if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) iz += 1;
       if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) iz -= 1;
       if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) ix += 1;
@@ -308,8 +343,46 @@ export class PlayerController implements IPlayerController {
     this.avatar.setAnim(this._anim);
     this.avatar.update(dt, elapsed);
 
-    this.updateCamera(dt);
+    if (this.cinematic) {
+      this.updateCinematic(dt);
+    } else {
+      this.updateCamera(dt);
+    }
     this.scanInteractables();
+  }
+
+  /**
+   * Arrival sweep: a slow descending spiral from high above the spawn down
+   * into the normal third-person rig, ending faced toward the objective.
+   * Any input skips it (handled in the input listeners).
+   */
+  private updateCinematic(dt: number): void {
+    const cine = this.cinematic!;
+    cine.t += dt;
+    const p = Math.min(1, cine.t / cine.duration);
+    const ease = p * p * (3 - 2 * p); // smoothstep
+
+    this.camYaw = cine.endYaw + (1 - ease) * 1.7; // unwinding spiral
+    this.camPitch = THREE.MathUtils.lerp(1.2, 0.45, ease);
+    this.camDist = THREE.MathUtils.lerp(34, this.camTargetDist, ease);
+    this.tmpHead.set(this.position.x, this.position.y + CAM_HEAD_HEIGHT, this.position.z);
+    this.followPos.copy(this.tmpHead);
+
+    const cosPitch = Math.cos(this.camPitch);
+    this.tmpCam.set(
+      this.followPos.x + Math.sin(this.camYaw) * cosPitch * this.camDist,
+      this.followPos.y + Math.sin(this.camPitch) * this.camDist,
+      this.followPos.z + Math.cos(this.camYaw) * cosPitch * this.camDist,
+    );
+    const camera = this.ctx.scene.camera;
+    camera.position.copy(this.tmpCam);
+    camera.lookAt(this.followPos);
+
+    if (p >= 1) {
+      this.cinematic = null;
+      this.camYaw = cine.endYaw;
+      this.camPitch = 0.45;
+    }
   }
 
   /** Orbit-rig camera: smoothed follow target + zoom, ground clearance. */

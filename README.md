@@ -36,8 +36,12 @@ it looks better on a real GPU.*
   down and reveal deeper, stranger prose for the whole party.
 - **Built-in guidance** — a live objective line in the HUD ("Wake the three
   sky-glyphs…"), pulsing golden beacons over the current goal (or the
-  waygate that leads toward it), and one-time control hints for first-time
-  players.
+  waygate that leads toward it), a screen-edge goal marker with distance,
+  minimap goal stars, an arrival camera cinematic that ends facing your
+  first objective, proximity audio that swells as you near the goal, and
+  one-time tutorial hints + contextual tips for first-time players.
+- **Crew pings** — press G to drop a teal "over here!" pillar your whole
+  party sees in-world and on the minimap.
 - **Shared journal, story log, party panel, character sheets, minimap,
   text + emote chat**, group choice voting with live tallies.
 - **Persistence** — campaigns live in a Durable Object per room code: story
@@ -75,6 +79,7 @@ worker (`wrangler dev`, port 8787, no Cloudflare account needed).
 | Wheel | Camera zoom |
 | E | Interact |
 | F | Anchor / release focus mode |
+| G | Crew ping ("over here!") |
 | J / C / O / H | Journal / Character / Settings / Help |
 | Enter | Chat · 1–8 emotes |
 

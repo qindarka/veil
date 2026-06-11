@@ -558,6 +558,80 @@ export class Skyharbor extends LocationBase {
    * rim height so nobody falls into the void (bounds clamping keeps players
    * close anyway).
    */
+  /**
+   * Keep players on actual ground. The harbor is islands + light-bridges over
+   * a cloud void; getGroundHeight alone would happily report a rim height
+   * while the player strolls onto thin air. If `pos` is outside every
+   * walkable footprint, project it back onto the nearest one.
+   */
+  constrainPosition(pos: THREE.Vector3): void {
+    if (this.walkIslands.length === 0) return; // not built yet
+    const MARGIN = 0.45; // stay this far inside any edge
+
+    let bestDx = 0;
+    let bestDz = 0;
+    let bestDistSq = Infinity;
+    let inside = false;
+
+    for (const isl of this.walkIslands) {
+      const dx = pos.x - isl.x;
+      const dz = pos.z - isl.z;
+      const d = Math.hypot(dx, dz);
+      if (d <= isl.radius - MARGIN) {
+        inside = true;
+        break;
+      }
+      // Projection onto the island rim (toward its center).
+      const s = d > 1e-6 ? (isl.radius - MARGIN) / d : 0;
+      const px = isl.x + dx * s;
+      const pz = isl.z + dz * s;
+      const distSq = (pos.x - px) ** 2 + (pos.z - pz) ** 2;
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        bestDx = px;
+        bestDz = pz;
+      }
+    }
+
+    if (!inside) {
+      for (const b of this.walkBridges) {
+        const abx = b.to.x - b.from.x;
+        const abz = b.to.z - b.from.z;
+        const lenSq = abx * abx + abz * abz;
+        if (lenSq < 1e-6) continue;
+        const t = THREE.MathUtils.clamp(
+          ((pos.x - b.from.x) * abx + (pos.z - b.from.z) * abz) / lenSq,
+          0,
+          1,
+        );
+        const cx = b.from.x + abx * t;
+        const cz = b.from.z + abz * t;
+        const lx = pos.x - cx;
+        const lz = pos.z - cz;
+        const lateral = Math.hypot(lx, lz);
+        if (lateral <= b.halfWidth - 0.15) {
+          inside = true;
+          break;
+        }
+        // Projection onto the deck edge.
+        const s = lateral > 1e-6 ? (b.halfWidth - 0.15) / lateral : 0;
+        const px = cx + lx * s;
+        const pz = cz + lz * s;
+        const distSq = (pos.x - px) ** 2 + (pos.z - pz) ** 2;
+        if (distSq < bestDistSq) {
+          bestDistSq = distSq;
+          bestDx = px;
+          bestDz = pz;
+        }
+      }
+    }
+
+    if (!inside && bestDistSq < Infinity) {
+      pos.x = bestDx;
+      pos.z = bestDz;
+    }
+  }
+
   override getGroundHeight(x: number, z: number): number {
     if (this.walkIslands.length === 0) return 0; // not built yet
     let bestScore = Infinity;

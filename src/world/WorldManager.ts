@@ -18,6 +18,7 @@ import type {
   Vec3,
 } from '../types';
 import { Beacons } from './Beacons';
+import { createLightShaft } from './builders';
 import { createParticles } from './Particles';
 import type { ParticleKind, ParticleSystem } from './Particles';
 import { Skyharbor } from './locations/Skyharbor';
@@ -68,6 +69,14 @@ export class WorldManager implements IWorldManager {
   private overlays: FxOverlay[] = [];
   /** Golden objective-guidance pillars (src/story/objectives.ts). */
   private readonly beacons = new Beacons();
+  /** Short-lived crew-ping pillars (party:marker). */
+  private pings: Array<{
+    group: THREE.Group;
+    shaftMat: THREE.MeshBasicMaterial;
+    ringMat: THREE.MeshBasicMaterial;
+    ring: THREE.Mesh;
+    remaining: number;
+  }> = [];
 
   get currentId(): LocationId | null {
     return this._currentId;
@@ -91,6 +100,53 @@ export class WorldManager implements IWorldManager {
     ctx.events.on('world:travel-end', refreshBeacons);
     ctx.events.on('net:welcome', refreshBeacons);
     ctx.events.on('story:ending', refreshBeacons);
+    ctx.events.on('party:marker', ({ p, location }) => {
+      if (location === this._currentId) this.spawnPing(p);
+    });
+  }
+
+  /** Teal "come here" pillar + expanding ground ring, fading over ~8s. */
+  private spawnPing(p: [number, number, number]): void {
+    if (!this._current) return;
+    const group = new THREE.Group();
+    const shaft = createLightShaft({
+      color: 0x4be3c3,
+      height: 18,
+      radiusTop: 0.18,
+      radiusBottom: 0.8,
+      opacity: 0.26,
+    });
+    const shaftMat = shaft.material as THREE.MeshBasicMaterial;
+    group.add(shaft);
+
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x4be3c3,
+      transparent: true,
+      opacity: 0.5,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      fog: false,
+    });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.05, 40), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.12;
+    group.add(ring);
+
+    group.position.set(p[0], this.getGroundHeight(p[0], p[2]), p[2]);
+    this._current.group.add(group);
+    this.pings.push({ group, shaftMat, ringMat, ring, remaining: 8 });
+    this.ctx.audio.sfx('chime');
+  }
+
+  private clearPings(): void {
+    for (const ping of this.pings) {
+      ping.group.parent?.remove(ping.group);
+      ping.ring.geometry.dispose();
+      ping.ringMat.dispose();
+      ping.shaftMat.dispose();
+    }
+    this.pings.length = 0;
   }
 
   // ── Travel ─────────────────────────────────────────────────────────────────
@@ -113,6 +169,7 @@ export class WorldManager implements IWorldManager {
         scene.scene.remove(this._current.group);
       }
       this.clearOverlays(); // event fx belong to the place we just left
+      this.clearPings();
 
       // Lazily instantiate, build once, cache forever.
       let loc = this.instances.get(id);
@@ -231,6 +288,9 @@ export class WorldManager implements IWorldManager {
       pos.x *= s;
       pos.z *= s;
     }
+    // Locations with voids (floating islands, bridges) additionally pull the
+    // position back onto an actual walkable surface.
+    this._current.constrainPosition?.(pos);
   }
 
   // ── Random-event fx overlays ───────────────────────────────────────────────
@@ -294,6 +354,28 @@ export class WorldManager implements IWorldManager {
   update(dt: number, elapsed: number): void {
     this._current?.update(dt, elapsed);
     this.beacons.update(dt, elapsed);
+
+    // Crew pings: ring expands over the first second, everything fades out
+    // across the last two.
+    for (let i = this.pings.length - 1; i >= 0; i--) {
+      const ping = this.pings[i];
+      ping.remaining -= dt;
+      if (ping.remaining <= 0) {
+        ping.group.parent?.remove(ping.group);
+        ping.ring.geometry.dispose();
+        ping.ringMat.dispose();
+        ping.shaftMat.dispose();
+        this.pings.splice(i, 1);
+        continue;
+      }
+      const age = 8 - ping.remaining;
+      const grow = 1 + Math.min(age, 1) * 2.2;
+      ping.ring.scale.setScalar(grow);
+      const fade = Math.min(1, ping.remaining / 2);
+      const pulse = 0.8 + 0.2 * Math.sin(age * 5);
+      ping.shaftMat.opacity = 0.26 * fade * pulse;
+      ping.ringMat.opacity = 0.5 * fade * (1 - Math.min(age, 1) * 0.5);
+    }
 
     for (let i = this.overlays.length - 1; i >= 0; i--) {
       const o = this.overlays[i];

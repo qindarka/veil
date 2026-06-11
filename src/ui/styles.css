@@ -387,6 +387,67 @@ input[type='checkbox'].toggle:checked::after {
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
+/* Screen-space objective marker (src/ui/ObjectiveMarker.ts): a pulsing gold
+   diamond over the goal with a distance readout, or an arrow clamped to the
+   screen border when the goal is off screen. Positioned per frame via
+   transform on the (zero-size) root; children center themselves around it. */
+.objective-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.objective-marker-diamond {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+  background: rgba(255, 210, 122, 0.16);
+  border: 1.5px solid var(--veil-gold);
+  animation: marker-pulse 1.9s ease-in-out infinite;
+}
+
+@keyframes marker-pulse {
+  0%, 100% { transform: rotate(45deg) scale(1); box-shadow: 0 0 8px rgba(255, 210, 122, 0.35), inset 0 0 5px rgba(255, 210, 122, 0.25); }
+  50% { transform: rotate(45deg) scale(1.16); box-shadow: 0 0 18px rgba(255, 210, 122, 0.65), inset 0 0 7px rgba(255, 210, 122, 0.4); }
+}
+
+/* Edge arrow: the glyph points right at rest; JS rotates it toward the goal. */
+.objective-marker-arrow {
+  position: absolute;
+  left: -10px;
+  top: -10px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--veil-gold);
+  text-shadow: 0 0 10px rgba(255, 210, 122, 0.8), 0 0 26px rgba(255, 210, 122, 0.35);
+}
+
+.objective-marker-distance {
+  position: absolute;
+  top: 11px;
+  left: 0;
+  transform: translateX(-50%);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--veil-gold);
+  text-shadow: 0 1px 6px rgba(11, 7, 22, 0.9), 0 0 10px rgba(255, 210, 122, 0.35);
+  transition: opacity var(--t-mid);
+}
+
 .hud-chips { display: flex; gap: 8px; margin-top: 4px; }
 
 .hud-chip {
@@ -1101,6 +1162,15 @@ input[type='checkbox'].toggle:checked::after {
 }
 
 .help-table td:first-child { width: 220px; color: var(--veil-gold); font-family: var(--font-display); letter-spacing: 0.04em; }
+
+.help-footnote {
+  margin-top: 16px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--veil-gold);
+  text-shadow: 0 0 10px rgba(255, 210, 122, 0.25);
+}
 
 /* ── Story overlay ─────────────────────────────────────────────────────────── */
 

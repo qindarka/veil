@@ -2,7 +2,9 @@
  * src/audio/synth.ts
  * Reusable Web Audio synthesis primitives (pads, plucks, FM bells, noise,
  * sweeps, ADSR) plus the designed one-shot for every SfxId in
- * shared/constants. No npm deps, no audio files: everything is synthesized.
+ * shared/constants and the objective-guidance pieces AudioManager drives
+ * (proximity shimmer loop, advance sting). No npm deps, no audio files:
+ * everything is synthesized.
  *
  * Conventions:
  *  - Every one-shot takes (ctx, dest, when, opts) and schedules itself on the
@@ -341,6 +343,78 @@ export function startPad(ctx: BaseAudioContext, dest: AudioNode, opts: PadOpts):
   };
 }
 
+// ── Sustained shimmer loop (objective proximity) ─────────────────────────────
+
+export interface ShimmerHandle {
+  /** Overall loop level (0..~0.3). Drive with setTargetAtTime; starts at 0. */
+  level: AudioParam;
+  /** Fire one tiny sparkle bell into the loop (the caller owns the timing). */
+  sparkle(when: number, detune?: number): void;
+  /** Release the loop; nodes self-dispose after the release tail. */
+  stop(releaseSeconds?: number): void;
+}
+
+/**
+ * A quiet, airy "you're getting close" texture: two slowly-beating high sines
+ * plus a breath of bandpassed noise, all behind a caller-driven level gain
+ * (created at 0 — silent and click-free until driven). Sparkle bells are
+ * fired by the caller so their density can follow gameplay. Voiced in the
+ * shared D-major palette so the loop sits inside the score.
+ */
+export function startShimmerLoop(ctx: BaseAudioContext, dest: AudioNode): ShimmerHandle {
+  const out = ctx.createGain();
+  out.gain.value = 0;
+  out.connect(dest);
+
+  // Two D6 sines a few cents apart beat slowly against each other (the same
+  // trick the ambient/hopeful shimmer layers use), warmed by an A5 below.
+  const pad = startPad(ctx, out, {
+    freqs: [midiHz(86), midiHz(86) * 1.004, midiHz(81)],
+    type: 'sine', filterHz: 9000, gain: 0.12, attack: 1.5,
+    detuneCents: 0, voicesPerNote: 1, vibratoHz: 0.11, vibratoCents: 5,
+  });
+
+  // Airy breath: looped noise through a soft high bandpass, very faint.
+  const noise = ctx.createBufferSource();
+  noise.buffer = getNoiseBuffer(ctx);
+  noise.loop = true;
+  const air = ctx.createBiquadFilter();
+  air.type = 'bandpass';
+  air.frequency.value = 5200;
+  air.Q.value = 0.8;
+  const airGain = ctx.createGain();
+  airGain.gain.value = 0.018;
+  noise.connect(air).connect(airGain).connect(out);
+  noise.start();
+
+  const sparkleNotes = [86, 88, 90, 93, 98]; // D6 E6 F#6 A6 D7 — palette highs
+
+  let stopped = false;
+  return {
+    level: out.gain,
+    sparkle(when: number, detune = 0): void {
+      if (stopped) return;
+      const midi = sparkleNotes[Math.floor(Math.random() * sparkleNotes.length)];
+      fmBell(ctx, out, when, { freq: midiHz(midi), ratio: 3.01, index: 0.7, decay: 0.9, gain: 0.1, detune });
+    },
+    stop(releaseSeconds = 0.5): void {
+      if (stopped) return;
+      stopped = true;
+      const t = ctx.currentTime;
+      out.gain.cancelScheduledValues(t);
+      out.gain.setTargetAtTime(0, t, releaseSeconds / 3);
+      pad.stop(t, releaseSeconds);
+      noise.stop(t + releaseSeconds + 0.1);
+      noise.onended = () => {
+        noise.disconnect();
+        air.disconnect();
+        airGain.disconnect();
+        out.disconnect();
+      };
+    },
+  };
+}
+
 // ── SFX registry: a designed one-shot per SfxId ──────────────────────────────
 // All sounds < 2s, mixed conservatively (they sit *under* the music).
 // `detune` is the per-call cents jitter supplied by AudioManager.sfx().
@@ -468,4 +542,17 @@ export const SFX_REGISTRY: Record<SfxId, SfxFn> = {
 export function playSfx(ctx: BaseAudioContext, dest: AudioNode, id: SfxId, detuneCents = 0): void {
   // Schedule a hair into the future so all sub-events share one clean origin.
   SFX_REGISTRY[id](ctx, dest, ctx.currentTime + 0.01, detuneCents);
+}
+
+// ── Designed stinger: objective advance ──────────────────────────────────────
+
+/**
+ * Bright, hopeful two-note rise (A5 → D6, a V→I lift in the shared palette)
+ * confirming that the party's objective just advanced. Sits a step below
+ * 'choice-result' in the mix; total length ≈ 0.9s.
+ */
+export function objectiveSting(ctx: BaseAudioContext, dest: AudioNode, when: number, detune = 0): void {
+  fmBell(ctx, dest, when, { freq: A5, ratio: 2.0, index: 1.1, decay: 0.4, gain: 0.07, detune });
+  fmBell(ctx, dest, when + 0.14, { freq: D6, ratio: 2.0, index: 1.1, decay: 0.75, gain: 0.085, detune });
+  pluck(ctx, dest, when + 0.14, { freq: midiHz(62), type: 'sine', gain: 0.05, decay: 0.5, detune });
 }

@@ -122,6 +122,7 @@ docs/  PROMPT.md ARCHITECTURE.md STORY_BIBLE.md ASSETS.md DEPLOYMENT.md
 | Wheel | Camera zoom 3–12m |
 | E | Interact with nearest highlighted object |
 | F | Toggle focus mode (anchor the scene) |
+| G | Crew ping: drop a temporary "come here" marker everyone sees |
 | J / C / O / H | Journal / Character sheet / Settings / Help |
 | Enter | Focus chat; Esc blurs |
 | 1–8 | Emotes |

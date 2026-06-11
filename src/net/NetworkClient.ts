@@ -428,6 +428,16 @@ export class NetworkClient implements INetworkClient {
         });
         break;
       }
+      case 'marker': {
+        // Ephemeral crew ping — no state mirror, straight to listeners.
+        events.emit('party:marker', {
+          from: msg.from,
+          name: msg.name,
+          p: msg.p,
+          location: msg.loc,
+        });
+        break;
+      }
       case 'mood': {
         state.mood = msg.mood;
         events.emit('audio:mood', { mood: msg.mood });

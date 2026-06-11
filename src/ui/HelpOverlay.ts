@@ -22,6 +22,7 @@ const CONTROLS: Array<[string, string]> = [
   ['Mouse wheel', 'Camera zoom (3–12m)'],
   ['E', 'Interact with the nearest highlighted object'],
   ['F', 'Toggle focus mode (anchor the scene)'],
+  ['G', 'Crew ping — drop a marker your whole party sees'],
   ['J / C / O / H', 'Journal / Character sheet / Settings / Help'],
   ['Enter', 'Focus chat (Esc blurs)'],
   ['1 – 8', 'Emotes'],
@@ -54,6 +55,14 @@ export class HelpOverlay {
     }
     table.appendChild(tbody);
     chrome.body.appendChild(table);
+
+    chrome.body.appendChild(
+      el(
+        'div',
+        'help-footnote',
+        'Lost? Follow the tall golden light, or the gold diamond at the screen edge.',
+      ),
+    );
 
     parent.appendChild(this.root);
   }

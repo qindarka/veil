@@ -3,13 +3,18 @@
  * Bottom-left 220px circular canvas map of the current location, redrawn at
  * ~10Hz from UIManager.update. North-fixed: gold dots are interactables,
  * violet diamonds portals, archetype-colored dots visible party members, and
- * a white chevron (rotated by player yaw) marks you. World scale maps the
+ * a white chevron (rotated by player yaw) marks you. Pulsing gold stars mark
+ * the current objective targets (src/story/objectives.ts), expanding teal
+ * rings are crew pings (G), and a gold rim chevron points at the nearest
+ * objective when every target sits beyond the rim. World scale maps the
  * location's boundsRadius onto the canvas radius.
  */
 
 import * as THREE from 'three';
 import { LOCATION_NAMES } from '../../shared/constants';
-import type { GameContext } from '../types';
+import type { LocationId } from '../../shared/constants';
+import { localTargets, resolveObjective } from '../story/objectives';
+import type { GameContext, Vec3 } from '../types';
 import { cssColor, el } from './UIManager';
 
 const SIZE = 220; // CSS pixels
@@ -21,6 +26,11 @@ const COLOR_GRID = 'rgba(141, 123, 255, 0.14)';
 const COLOR_GOLD = '#ffd27a';
 const COLOR_VIOLET = '#8d7bff';
 
+/** Crew pings live this long on the map (ms). */
+const PING_LIFE_MS = 8000;
+/** One expand-and-fade cycle of a ping ring (ms). */
+const PING_CYCLE_MS = 1400;
+
 const tmpVec = new THREE.Vector3();
 
 export class Minimap {
@@ -30,6 +40,8 @@ export class Minimap {
   private readonly label: HTMLDivElement;
   private readonly dpr: number;
   private lastLabelLoc: string | null = null;
+  /** Crew pings (party:marker), pruned once older than PING_LIFE_MS. */
+  private pings: Array<{ p: Vec3; at: number; location: LocationId }> = [];
 
   constructor(parent: HTMLElement) {
     const wrap = el('div', 'minimap-wrap');
@@ -46,6 +58,9 @@ export class Minimap {
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
+    ctx.events.on('party:marker', ({ p, location }) => {
+      this.pings.push({ p, at: performance.now(), location });
+    });
   }
 
   /** Full redraw; called at ~10Hz by UIManager. */
@@ -53,6 +68,11 @@ export class Minimap {
     const game = this.ctx;
     const g = this.c2d;
     if (!game || !g) return;
+
+    const now = performance.now();
+    if (this.pings.length > 0) {
+      this.pings = this.pings.filter((ping) => now - ping.at < PING_LIFE_MS);
+    }
 
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     g.clearRect(0, 0, SIZE, SIZE);
@@ -136,6 +156,59 @@ export class Minimap {
         g.shadowBlur = 0;
       }
 
+      // Objective guidance: a pulsing gold star on each current goal target
+      // (same resolution path as the screen-space marker). When every target
+      // sits beyond the rim, a rim chevron points toward the nearest instead.
+      if (!game.net.offlineMode && game.state.endingId === null) {
+        const portals: Array<{ id: string; to: LocationId }> = [];
+        for (const it of location.interactables) {
+          if (it.kind === 'portal' && it.portalTo) portals.push({ id: it.id, to: it.portalTo });
+        }
+        const objective = resolveObjective(game.state);
+        const pulse = 0.5 + 0.5 * Math.sin(now / 240);
+        let anyOnMap = false;
+        let anyTarget = false;
+        let nearestAngle = 0;
+        let nearestDistSq = Infinity;
+        for (const id of localTargets(objective, game.world.currentId, portals)) {
+          const target = game.world.getInteractable(id);
+          if (!target) continue;
+          anyTarget = true;
+          target.object.getWorldPosition(tmpVec);
+          const dSq = (tmpVec.x - you.x) ** 2 + (tmpVec.z - you.z) ** 2;
+          if (dSq < nearestDistSq) {
+            nearestDistSq = dSq;
+            nearestAngle = Math.atan2(tmpVec.z, tmpVec.x);
+          }
+          if (Math.hypot(tmpVec.x, tmpVec.z) * scale <= r - PADDING) {
+            const [px, py] = project(tmpVec.x, tmpVec.z);
+            this.drawStar(g, px, py, 4.2 + pulse * 1.8, 0.65 + 0.35 * pulse);
+            anyOnMap = true;
+          }
+        }
+        if (anyTarget && !anyOnMap) {
+          this.drawRimChevron(g, cx, cy, r - PADDING, nearestAngle, 0.65 + 0.35 * pulse);
+        }
+      }
+
+      // Crew pings (G): expanding, fading teal rings — same location only.
+      for (const ping of this.pings) {
+        if (ping.location !== game.world.currentId) continue;
+        const age = now - ping.at;
+        const cycle = (age % PING_CYCLE_MS) / PING_CYCLE_MS;
+        const fade = 1 - age / PING_LIFE_MS;
+        const [px, py] = project(ping.p[0], ping.p[2]);
+        g.strokeStyle = `rgba(75, 227, 195, ${(0.9 * (1 - cycle) * fade).toFixed(3)})`;
+        g.lineWidth = 1.6;
+        g.beginPath();
+        g.arc(px, py, 2.5 + cycle * 12, 0, Math.PI * 2);
+        g.stroke();
+        g.fillStyle = `rgba(75, 227, 195, ${(0.85 * fade).toFixed(3)})`;
+        g.beginPath();
+        g.arc(px, py, 2, 0, Math.PI * 2);
+        g.fill();
+      }
+
       // You: white chevron rotated by yaw (map stays north-fixed). With
       // rotation.y = yaw, world forward is (-sin yaw, -cos yaw) in (x, z),
       // which equals a canvas rotation of -yaw applied to an up-pointing
@@ -176,5 +249,60 @@ export class Minimap {
       this.lastLabelLoc = id;
       this.label.textContent = id ? LOCATION_NAMES[id] : '';
     }
+  }
+
+  // ── Drawing helpers ─────────────────────────────────────────────────────────
+
+  /** Four-point sparkle star with a soft gold glow. */
+  private drawStar(
+    g: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    alpha: number,
+  ): void {
+    g.save();
+    g.globalAlpha = alpha;
+    g.fillStyle = COLOR_GOLD;
+    g.shadowColor = COLOR_GOLD;
+    g.shadowBlur = 9;
+    g.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const spoke = i % 2 === 0 ? radius : radius * 0.42;
+      const a = (i * Math.PI) / 4 - Math.PI / 2;
+      const px = x + Math.cos(a) * spoke;
+      const py = y + Math.sin(a) * spoke;
+      if (i === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    }
+    g.closePath();
+    g.fill();
+    g.restore();
+  }
+
+  /** Gold chevron on the rim pointing outward along `angle` (canvas radians). */
+  private drawRimChevron(
+    g: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    radius: number,
+    angle: number,
+    alpha: number,
+  ): void {
+    g.save();
+    g.globalAlpha = alpha;
+    g.translate(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius);
+    g.rotate(angle + Math.PI / 2); // chevron path points "up"; aim it outward
+    g.fillStyle = COLOR_GOLD;
+    g.shadowColor = COLOR_GOLD;
+    g.shadowBlur = 8;
+    g.beginPath();
+    g.moveTo(0, -6.5);
+    g.lineTo(5, 3);
+    g.lineTo(0, 0.6);
+    g.lineTo(-5, 3);
+    g.closePath();
+    g.fill();
+    g.restore();
   }
 }
