@@ -1,91 +1,59 @@
-# Deployment — GitHub → Cloudflare Pages + Workers
+# Deployment — Cloudflare dashboard Git integration
 
-The game ships as two Cloudflare pieces:
+One Worker serves everything: the built client (`dist/`, as static assets)
+and the realtime API (`/api/*`, one Durable Object per campaign room code).
+Because site and API share an origin, the client needs **no configured
+backend URL** — and deployment is the point-and-click flow you already know:
+connect the GitHub repo in the Cloudflare dashboard and every push builds and
+deploys automatically. No API tokens, no GitHub secrets, no wrangler CLI.
 
-- **Worker + Durable Object** (`wrangler.toml`, `worker/src/`) — the realtime
-  backend. One Durable Object instance per campaign room code.
-- **Cloudflare Pages** — the static Vite build (`dist/`) of the client.
+## Setup (one time, all in the dashboard)
 
-Pushing to `main` deploys both via `.github/workflows/deploy.yml`.
+1. Cloudflare dashboard → **Workers & Pages → Create → Workers →
+   Import a repository** (connect your GitHub account if prompted and pick
+   `veil`).
+2. Project/worker name: anything (e.g. `echoes-of-the-veil` to match
+   wrangler.toml).
+3. Build settings:
+   - **Build command:** `npm run build`
+   - **Deploy command:** `npx wrangler deploy` (the usual default)
+4. Save and deploy.
 
-## One-time setup
+That's it. Cloudflare clones the repo, runs the build, reads `wrangler.toml`
+(static assets from `dist/`, the `VeilRoom` Durable Object binding and its
+migration), and deploys. Every push to `main` repeats this automatically;
+the game is live at `https://<worker-name>.<your-subdomain>.workers.dev`
+(attach a custom domain on the worker's Settings → Domains & Routes if you
+like). Share that URL plus a room code with friends and play.
 
-### 1. Cloudflare account pieces
+Notes:
 
-1. Create (or log into) a Cloudflare account and note your **Account ID**
-   (dashboard → Workers & Pages → right sidebar).
-2. Create an **API token**: dashboard → My Profile → API Tokens →
-   Create Token → start from "Edit Cloudflare Workers", and add the
-   **Cloudflare Pages: Edit** permission. Scope it to your account.
-3. Create the Pages project (one time, from your machine):
+- The first deploy runs the Durable Object migration (`v1`,
+  `new_sqlite_classes = ["VeilRoom"]`) declared in wrangler.toml. SQLite-backed
+  DOs work on the free plan.
+- GitHub Actions runs a secrets-free CI build check on each push
+  (`.github/workflows/ci.yml`); deployment itself is Cloudflare-side.
+- `wrangler.toml` sets `ALLOWED_ORIGIN = "*"` for the HTTP endpoints. Since
+  site and API are same-origin you can tighten it to your workers.dev /
+  custom domain, but it's not required.
 
-   ```sh
-   npx wrangler login
-   npx wrangler pages project create echoes-of-the-veil --production-branch=main
-   ```
+## Manual deploy (optional CLI alternative)
 
-4. Deploy the worker once to learn its URL:
-
-   ```sh
-   npx wrangler deploy
-   # → https://echoes-of-the-veil.<your-subdomain>.workers.dev
-   ```
-
-   The first deploy also runs the Durable Object migration (`v1`,
-   `new_sqlite_classes = ["VeilRoom"]`) declared in wrangler.toml.
-
-### 2. GitHub repository configuration
-
-Settings → Secrets and variables → Actions:
-
-| Kind     | Name                    | Value                                   |
-| -------- | ----------------------- | --------------------------------------- |
-| Secret   | `CLOUDFLARE_API_TOKEN`  | the token from step 2                   |
-| Secret   | `CLOUDFLARE_ACCOUNT_ID` | your account id                         |
-| Variable | `VITE_WORKER_URL`       | the workers.dev URL from step 4 (no trailing slash) |
-
-`VITE_WORKER_URL` is baked into the client at build time — it is how the
-deployed frontend finds the WebSocket backend.
-
-### 3. Push
+If you ever want to deploy from your machine instead:
 
 ```sh
-git push origin main
+npx wrangler login
+npm run deploy        # = npm run build && wrangler deploy
 ```
-
-The `Deploy` workflow typechecks, builds, deploys the worker, then publishes
-`dist/` to Pages. Your game is live at
-`https://echoes-of-the-veil.pages.dev` (plus any custom domain you attach to
-the Pages project).
-
-## Manual deploys (no CI)
-
-```sh
-# Backend
-npm run deploy:worker
-
-# Frontend (set the worker URL for the build)
-VITE_WORKER_URL=https://echoes-of-the-veil.<subdomain>.workers.dev npm run deploy:pages
-```
-
-## CORS / origins
-
-`wrangler.toml` sets `ALLOWED_ORIGIN = "*"` for the HTTP endpoints (room info,
-health). Tighten it to your Pages origin
-(`https://echoes-of-the-veil.pages.dev`) for production if you prefer.
-
-## Costs & limits
-
-- Durable Objects (SQLite-backed) and Workers free tiers comfortably cover a
-  friends-scale game; the room DO stays in memory only while players are
-  connected (a 10Hz broadcast interval pins it during play).
-- Pages static hosting is free for this scale.
 
 ## Troubleshooting
 
-- **Client connects to nothing in prod** → `VITE_WORKER_URL` repo variable
-  missing/wrong at build time. Re-run the workflow after fixing.
-- **`wrangler deploy` complains about migrations** → the DO class was renamed;
-  add a new `[[migrations]]` entry rather than editing `v1`.
-- **WebSocket fails only on https** → ensure the worker URL uses `https://`
-  (the client upgrades it to `wss://`).
+- **Build fails in Cloudflare** → check the build log in the dashboard; it
+  must be running `npm run build` on Node 22+ (set the `NODE_VERSION`
+  environment variable to `22` in the project's build settings if needed).
+- **Site loads but multiplayer doesn't connect** → the client connects
+  same-origin in production; if you front the worker with another host,
+  either route `/api/*` through to it or bake `VITE_WORKER_URL` into the
+  build (see `.env.example`).
+- **`wrangler deploy` complains about migrations** → the DO class was
+  renamed; add a new `[[migrations]]` entry rather than editing `v1`.

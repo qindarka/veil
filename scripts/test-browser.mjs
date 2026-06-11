@@ -76,15 +76,14 @@ try {
   await submit(b);
   console.log('OK WalkerB in-game (joined via code)');
 
-  // Mutual presence. window.__veil is the dev-only GameContext handle; assert
-  // on mirrored state + real party-list DOM rows (innerText is unreliable on
-  // backgrounded headless tabs). Event delivery to a throttled background tab
-  // can lag, so poll briefly.
+  // Mutual presence, asserted on the party-list DOM (textContent — innerText
+  // is unreliable on backgrounded headless tabs). Works against dev AND
+  // production builds; window.__veil exists only in dev. Event delivery to a
+  // throttled background tab can lag, so poll briefly.
   const partyCheck = (page) =>
     page.evaluate(() => ({
-      names: [...window.__veil.state.players.values()]
-        .filter((p) => p.online)
-        .map((p) => p.name)
+      names: [...document.querySelectorAll('.party-row .party-name')]
+        .map((el) => (el.textContent ?? '').replace(' (you)', '').trim())
         .sort(),
       rows: document.querySelectorAll('.party-row').length,
     }));

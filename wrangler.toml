@@ -1,11 +1,23 @@
-# Cloudflare Workers configuration for the Echoes of the Veil backend.
-# The Worker routes /api/* requests; each campaign ("room") is one Durable
-# Object instance addressed by its room code, holding live WebSocket sessions
-# and the persisted campaign state.
+# Cloudflare Workers configuration for Echoes of the Veil — one Worker serves
+# everything: the built client from dist/ as static assets, and /api/* for
+# realtime, where each campaign ("room") is one Durable Object instance
+# addressed by its room code (live WebSocket sessions + persisted state).
+#
+# Deploys via the dashboard's Git integration: connect this repo under
+# Workers & Pages, set the build command to "npm run build", and every push
+# builds and deploys automatically (see docs/DEPLOYMENT.md).
 
 name = "echoes-of-the-veil"
 main = "worker/src/index.ts"
 compatibility_date = "2026-05-01"
+
+# Serve the Vite build output as static assets on the same origin as the API,
+# so the client needs no configured backend URL (it connects same-origin).
+[assets]
+directory = "dist"
+not_found_handling = "single-page-application"
+# Assets win by default; force API (and its WebSocket upgrades) to the Worker.
+run_worker_first = ["/api/*"]
 
 [[durable_objects.bindings]]
 name = "ROOMS"

@@ -91,11 +91,12 @@ lists → chat) in `scripts/test-browser.mjs`; it needs a one-off
 
 ## Playing with friends
 
-- **Deployed (recommended):** push to GitHub and let the included Actions
-  workflow deploy to Cloudflare Pages + Workers — see
-  [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the one-time setup (two
-  secrets, one variable, two `wrangler` commands). Then just share your
-  Pages URL and a room code.
+- **Deployed (recommended):** connect the repo in the Cloudflare dashboard
+  (Workers & Pages → Import a repository, build command `npm run build`) and
+  every push auto-deploys — one Worker serves the site and the realtime API
+  together. No tokens or secrets needed; see
+  [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). Then just share your
+  workers.dev URL and a room code.
 - **LAN:** run `npx vite --host` plus `npm run dev:worker`, set
   `VITE_WORKER_URL=http://<your-lan-ip>:8787` in `.env`, and friends on the
   network open `http://<your-lan-ip>:5173`.
@@ -170,10 +171,10 @@ typed events that drive the UI, audio and world. Full contracts and flows:
   (`sessionStorage` ↔ `localStorage` handoff); if the browser is killed
   hard (no `pagehide`), the next session gets a fresh identity. Campaign
   progress is unaffected.
-- **Tests run on demand, not in CI** — typecheck + build run on every deploy,
-  but `test:sync` and the two-tab browser test (`scripts/test-browser.mjs`)
-  need a locally running worker, so they aren't wired into the GitHub Actions
-  workflow yet.
+- **Tests run on demand, not in CI** — typecheck + build run on every push
+  (`.github/workflows/ci.yml`) and on every Cloudflare deploy, but
+  `test:sync` and the two-tab browser test (`scripts/test-browser.mjs`) need
+  a locally running worker, so they aren't wired into CI yet.
 
 ---
 

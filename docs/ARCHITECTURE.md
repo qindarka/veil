@@ -87,7 +87,7 @@ worker/src/
 
 scripts/test-sync.mjs  two-headless-client DO sync test                   [net]
 docs/  PROMPT.md ARCHITECTURE.md STORY_BIBLE.md ASSETS.md DEPLOYMENT.md
-.github/workflows/deploy.yml
+.github/workflows/ci.yml   (build check; deploys run Cloudflare-side via Git integration)
 ```
 
 ## Conventions

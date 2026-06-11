@@ -1,0 +1,27 @@
+# CI: typecheck + build on every push/PR. Needs no secrets.
+# Deployment is handled by Cloudflare's Git integration (the dashboard pulls
+# this repo and runs the build/deploy itself) — see docs/DEPLOYMENT.md.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck and build
+        run: npm run build
