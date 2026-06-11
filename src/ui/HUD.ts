@@ -8,6 +8,7 @@
 
 import { ARCHETYPES } from '../../shared/archetypes';
 import { EMOTES, LOCATION_NAMES } from '../../shared/constants';
+import { resolveObjective } from '../story/objectives';
 import type { NetStatus, GameContext, UIPanel } from '../types';
 import { actRoman, el, kbdHint } from './UIManager';
 import type { UIManager } from './UIManager';
@@ -33,6 +34,9 @@ export class HUD {
 
   private readonly locationEl: HTMLDivElement;
   private readonly actEl: HTMLDivElement;
+  /** The "what do I do now" line (src/story/objectives.ts). */
+  private readonly objectiveEl: HTMLDivElement;
+  private lastObjectiveId = '';
   private readonly roomChip: HTMLButtonElement;
   private readonly connPill: HTMLSpanElement;
   private readonly partyList: HTMLDivElement;
@@ -47,6 +51,7 @@ export class HUD {
     const topLeft = el('div', 'hud-topleft');
     this.locationEl = el('div', 'hud-location', '');
     this.actEl = el('div', 'hud-act', 'Act I');
+    this.objectiveEl = el('div', 'hud-objective', '');
     const chips = el('div', 'hud-chips');
     this.roomChip = el('button', 'hud-chip hidden', '');
     this.roomChip.type = 'button';
@@ -57,6 +62,7 @@ export class HUD {
     chips.appendChild(this.connPill);
     topLeft.appendChild(this.locationEl);
     topLeft.appendChild(this.actEl);
+    topLeft.appendChild(this.objectiveEl);
     topLeft.appendChild(chips);
     parent.appendChild(topLeft);
 
@@ -125,14 +131,20 @@ export class HUD {
       this.setRoomCode(ctx.state.roomCode);
       this.setAct(ctx.state.act);
       this.refreshParty();
+      this.refreshObjective();
     });
 
     ev.on('world:travel-end', ({ location }) => {
       this.locationEl.textContent = LOCATION_NAMES[location];
       this.refreshParty(); // elsewhere-glyphs are relative to where *you* are
+      this.refreshObjective(); // objectives are phrased relative to where you stand
     });
 
-    ev.on('story:flags', ({ act }) => this.setAct(act));
+    ev.on('story:flags', ({ act }) => {
+      this.setAct(act);
+      this.refreshObjective();
+    });
+    ev.on('story:ending', () => this.refreshObjective());
 
     ev.on('party:player-joined', () => this.refreshParty());
     ev.on('party:player-left', () => this.refreshParty());
@@ -168,6 +180,24 @@ export class HUD {
   private setNetStatus(status: NetStatus): void {
     this.connPill.textContent = PILL_TEXT[status];
     this.connPill.className = `hud-pill ${PILL_CLASS[status]}`;
+  }
+
+  /** Re-derive the objective line from mirrored campaign state. */
+  private refreshObjective(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (ctx.net.offlineMode) {
+      this.objectiveEl.textContent = 'Explore freely — the story sleeps without the Veil server';
+      return;
+    }
+    const objective = resolveObjective(ctx.state);
+    if (objective.id === this.lastObjectiveId) return;
+    this.lastObjectiveId = objective.id;
+    this.objectiveEl.textContent = objective.text;
+    // Re-trigger the settle-in animation so a new goal catches the eye.
+    this.objectiveEl.classList.remove('hud-objective-new');
+    void this.objectiveEl.offsetWidth; // restart the CSS animation
+    this.objectiveEl.classList.add('hud-objective-new');
   }
 
   private setAct(act: number): void {

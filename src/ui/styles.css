@@ -335,6 +335,58 @@ input[type='checkbox'].toggle:checked::after {
   text-shadow: 0 0 10px rgba(255, 210, 122, 0.4);
 }
 
+/* The "what do I do now" line under the location name. */
+.hud-objective {
+  margin-top: 6px;
+  max-width: 340px;
+  font-size: 13.5px;
+  font-style: italic;
+  line-height: 1.45;
+  color: rgba(232, 226, 244, 0.92);
+  text-shadow: 0 1px 8px rgba(11, 7, 22, 0.9);
+  border-left: 2px solid rgba(255, 210, 122, 0.55);
+  padding-left: 9px;
+}
+
+.hud-objective-new {
+  animation: objective-in 700ms ease-out;
+}
+
+@keyframes objective-in {
+  0% { opacity: 0; transform: translateX(-8px); }
+  35% { opacity: 1; }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+/* First-session onboarding hint pill — top-center, below the toast stack,
+   clear of the story overlay and choice panel which own the lower third. */
+.onboarding-hint {
+  position: absolute;
+  left: 50%;
+  top: 92px;
+  transform: translateX(-50%);
+  max-width: 560px;
+  padding: 10px 22px;
+  border-radius: 999px;
+  background: rgba(13, 9, 28, 0.85);
+  border: 1px solid rgba(75, 227, 195, 0.4);
+  box-shadow: 0 0 24px rgba(75, 227, 195, 0.12);
+  backdrop-filter: blur(10px);
+  color: rgba(232, 226, 244, 0.95);
+  font-size: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.onboarding-hint-in {
+  animation: hint-in 500ms ease-out;
+}
+
+@keyframes hint-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 .hud-chips { display: flex; gap: 8px; margin-top: 4px; }
 
 .hud-chip {

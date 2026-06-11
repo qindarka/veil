@@ -27,6 +27,7 @@ import { HUD } from './HUD';
 import { Journal } from './Journal';
 import { LoadingVeil } from './LoadingVeil';
 import { MainMenu } from './MainMenu';
+import { OnboardingHints } from './OnboardingHints';
 import { Minimap } from './Minimap';
 import { SettingsPanel } from './SettingsPanel';
 import { StoryOverlay } from './StoryOverlay';
@@ -128,6 +129,7 @@ export class UIManager implements IUIManager {
   private readonly loadingVeil: LoadingVeil;
   private readonly endingScreen: EndingScreen;
   private readonly mainMenu: MainMenu;
+  private readonly onboarding: OnboardingHints;
 
   /** Reasons the keyboard is currently captured ('menu', 'chat', 'panel'...). */
   private captureReasons = new Set<string>();
@@ -177,6 +179,7 @@ export class UIManager implements IUIManager {
     this.loadingVeil = new LoadingVeil(this.layerVeil);
     this.endingScreen = new EndingScreen(this, this.layerVeil);
     this.mainMenu = new MainMenu(this, this.layerMenu);
+    this.onboarding = new OnboardingHints(this.layerHud);
 
     window.addEventListener('keydown', this.onKeyDown);
   }
@@ -199,6 +202,7 @@ export class UIManager implements IUIManager {
     this.loadingVeil.init(ctx);
     this.endingScreen.init(ctx);
     this.mainMenu.init(ctx);
+    this.onboarding.init(ctx);
 
     const ev = ctx.events;
 
@@ -250,6 +254,7 @@ export class UIManager implements IUIManager {
   update(dt: number, _elapsed: number): void {
     this.storyOverlay.update(dt);
     this.choicePanel.update(dt);
+    this.onboarding.update(dt);
 
     // Minimap redraw at ~10Hz; full-rate redraws are wasted work for a map.
     this.minimapAccum += dt;

@@ -17,6 +17,7 @@ import type {
   IWorldManager,
   Vec3,
 } from '../types';
+import { Beacons } from './Beacons';
 import { createParticles } from './Particles';
 import type { ParticleKind, ParticleSystem } from './Particles';
 import { Skyharbor } from './locations/Skyharbor';
@@ -65,6 +66,8 @@ export class WorldManager implements IWorldManager {
   private traveling = false;
   /** Temporary random-event particle overlays (see onRandomEvent). */
   private overlays: FxOverlay[] = [];
+  /** Golden objective-guidance pillars (src/story/objectives.ts). */
+  private readonly beacons = new Beacons();
 
   get currentId(): LocationId | null {
     return this._currentId;
@@ -80,6 +83,14 @@ export class WorldManager implements IWorldManager {
     ctx.events.on('event:random', ({ event }) => {
       this.onRandomEvent(event.fx, event.location, event.durationMs);
     });
+    // Objective guidance beacons follow the campaign state: anything that can
+    // move the golden path re-resolves them.
+    const refreshBeacons = () => this.beacons.refresh(this.ctx, this._current);
+    ctx.events.on('story:flags', refreshBeacons);
+    ctx.events.on('locations:unlocked', refreshBeacons);
+    ctx.events.on('world:travel-end', refreshBeacons);
+    ctx.events.on('net:welcome', refreshBeacons);
+    ctx.events.on('story:ending', refreshBeacons);
   }
 
   // ── Travel ─────────────────────────────────────────────────────────────────
@@ -282,6 +293,7 @@ export class WorldManager implements IWorldManager {
 
   update(dt: number, elapsed: number): void {
     this._current?.update(dt, elapsed);
+    this.beacons.update(dt, elapsed);
 
     for (let i = this.overlays.length - 1; i >= 0; i--) {
       const o = this.overlays[i];

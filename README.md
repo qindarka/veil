@@ -34,6 +34,10 @@ it looks better on a real GPU.*
   archetype-gated discoveries the rest of the party can't see.
 - **Focus mode** — any player can *anchor* a scene (F) to slow the moment
   down and reveal deeper, stranger prose for the whole party.
+- **Built-in guidance** — a live objective line in the HUD ("Wake the three
+  sky-glyphs…"), pulsing golden beacons over the current goal (or the
+  waygate that leads toward it), and one-time control hints for first-time
+  players.
 - **Shared journal, story log, party panel, character sheets, minimap,
   text + emote chat**, group choice voting with live tallies.
 - **Persistence** — campaigns live in a Durable Object per room code: story
