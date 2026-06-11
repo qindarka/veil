@@ -7,7 +7,7 @@
 # Workers & Pages, set the build command to "npm run build", and every push
 # builds and deploys automatically (see docs/DEPLOYMENT.md).
 
-name = "echoes-of-the-veil"
+name = "veil"
 main = "worker/src/index.ts"
 compatibility_date = "2026-05-01"
 
