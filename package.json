@@ -1,0 +1,32 @@
+{
+  "name": "echoes-of-the-veil",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A cooperative narrative mystery for 6-10 Veilwalkers, set in a shared living dream-world.",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n client,worker -c cyan,magenta \"vite\" \"wrangler dev\"",
+    "dev:client": "vite",
+    "dev:worker": "wrangler dev",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p worker/tsconfig.json --noEmit",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "test:sync": "node scripts/test-sync.mjs",
+    "deploy:worker": "wrangler deploy",
+    "deploy:pages": "npm run build && wrangler pages deploy dist --project-name echoes-of-the-veil"
+  },
+  "dependencies": {
+    "three": "0.184.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260610.1",
+    "@types/three": "0.184.1",
+    "concurrently": "10.0.3",
+    "typescript": "6.0.3",
+    "vite": "8.0.16",
+    "wrangler": "4.99.0"
+  }
+}

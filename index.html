@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Echoes of the Veil — a cooperative narrative mystery for 6-10 Veilwalkers, set in a shared living dream-world."
+    />
+    <title>Echoes of the Veil</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='27' fill='%230b0716' stroke='%23ffd27a' stroke-width='3'/%3E%3Ccircle cx='32' cy='32' r='11' fill='%234be3c3'/%3E%3Ccircle cx='32' cy='32' r='4' fill='%23ffd27a'/%3E%3C/svg%3E"
+    />
+    <style>
+      /* Minimal pre-stylesheet styles so the first paint looks intentional.
+         The full UI stylesheet is imported from src/ui/styles.css. */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0b0716;
+        color: #e8e2f4;
+        font-family: Georgia, 'Times New Roman', serif;
+      }
+      #game-canvas {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        outline: none;
+      }
+      #ui-root {
+        position: fixed;
+        inset: 0;
+        pointer-events: none; /* individual UI elements re-enable pointer events */
+        z-index: 10;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game-canvas"></canvas>
+    <div id="ui-root"></div>
+    <noscript>
+      <p style="padding: 2rem; text-align: center">
+        Echoes of the Veil needs JavaScript and a desktop browser with WebGL2.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

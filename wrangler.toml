@@ -1,0 +1,25 @@
+# Cloudflare Workers configuration for the Echoes of the Veil backend.
+# The Worker routes /api/* requests; each campaign ("room") is one Durable
+# Object instance addressed by its room code, holding live WebSocket sessions
+# and the persisted campaign state.
+
+name = "echoes-of-the-veil"
+main = "worker/src/index.ts"
+compatibility_date = "2026-05-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "VeilRoom"
+
+# SQLite-backed Durable Objects (required for free plan, recommended generally).
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["VeilRoom"]
+
+[dev]
+port = 8787
+
+[vars]
+# Origin allowed for cross-origin HTTP API calls ("*" = any origin).
+# Tighten this to your Pages URL in production if desired.
+ALLOWED_ORIGIN = "*"
